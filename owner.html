@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reema Official - Owner Panel</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #ece5dd;
+    min-height: 100vh;
+    display: flex;
+  }
+  #sidebar {
+    width: 100%;
+    max-width: 320px;
+    background: white;
+    border-right: 1px solid #ddd;
+    overflow-y: auto;
+    height: 100vh;
+  }
+  #sidebar h2 {
+    background: #075e54;
+    color: white;
+    margin: 0;
+    padding: 16px;
+    font-size: 18px;
+  }
+  .customerItem {
+    padding: 12px 16px;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+  }
+  .customerItem:hover, .customerItem.active {
+    background: #f0f0f0;
+  }
+  .customerItem .cname {
+    font-weight: bold;
+    font-size: 15px;
+  }
+  .customerItem .clast {
+    font-size: 13px;
+    color: #777;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #chatPanel {
+    flex: 1;
+    display: none;
+    flex-direction: column;
+    height: 100vh;
+  }
+  #chatHeader {
+    background: #075e54;
+    color: white;
+    padding: 14px 16px;
+    font-size: 17px;
+    font-weight: bold;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .bubble {
+    max-width: 75%;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    line-height: 1.3;
+    word-wrap: break-word;
+  }
+  .them { align-self: flex-start; background: white; }
+  .me { align-self: flex-end; background: #dcf8c6; }
+  .bubble .sender { font-size: 11px; color: #888; margin-bottom: 2px; }
+  #inputRow { display: flex; padding: 10px; background: #f0f0f0; gap: 8px; }
+  #inputRow input {
+    flex: 1; padding: 12px; border-radius: 24px; border: 1px solid #ccc; font-size: 15px;
+  }
+  #inputRow button {
+    background: #075e54; color: white; border: none; border-radius: 50%;
+    width: 46px; height: 46px; font-size: 18px; cursor: pointer;
+  }
+  #emptyState {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    color: #999; font-size: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>Reema Official - Chats</h2>
+  <div id="customerList"></div>
+</div>
+
+<div id="emptyState">Select a customer to view chat</div>
+
+<div id="chatPanel">
+  <div id="chatHeader"></div>
+  <div id="messages"></div>
+  <div id="inputRow">
+    <input id="msgInput" placeholder="Type a reply">
+    <button onclick="sendReply()">➤</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, push, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDoEN6MRNgZ8xKt9zxSfcHRwF77CItz7hs",
+  authDomain: "turth-chat-bottle.firebaseapp.com",
+  databaseURL: "https://turth-chat-bottle-default-rtdb.firebaseio.com",
+  projectId: "turth-chat-bottle",
+  storageBucket: "turth-chat-bottle.firebasestorage.app",
+  messagingSenderId: "953030342199",
+  appId: "1:953030342199:web:d7e073979f343e55f731b2"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+
+let currentCustomerId = null;
+let customerNames = {};
+
+const customersRef = ref(db, "boutique");
+onValue(customersRef, function (snap) {
+  const data = snap.val() || {};
+  const list = document.getElementById("customerList");
+  list.innerHTML = "";
+
+  Object.keys(data).forEach(function (custId) {
+    const custData = data[custId];
+    let name = "Customer";
+    let lastMsg = "";
+    if (custData.info) {
+      const infoVals = Object.values(custData.info);
+      if (infoVals.length) name = infoVals[0].name;
+    }
+    if (custData.messages) {
+      const msgVals = Object.values(custData.messages);
+      if (msgVals.length) lastMsg = msgVals[msgVals.length - 1].text;
+    }
+    customerNames[custId] = name;
+
+    const item = document.createElement("div");
+    item.className = "customerItem" + (custId === currentCustomerId ? " active" : "");
+    item.onclick = function () { openCustomer(custId); };
+    const n = document.createElement("div");
+    n.className = "cname";
+    n.textContent = name;
+    const l = document.createElement("div");
+    l.className = "clast";
+    l.textContent = lastMsg;
+    item.appendChild(n);
+    item.appendChild(l);
+    list.appendChild(item);
+  });
+});
+
+window.openCustomer = function (custId) {
+  currentCustomerId = custId;
+  document.getElementById("emptyState").style.display = "none";
+  document.getElementById("chatPanel").style.display = "flex";
+  document.getElementById("chatHeader").textContent = customerNames[custId] || "Customer";
+
+  const msgRef = query(ref(db, "boutique/" + custId + "/messages"), limitToLast(100));
+  onValue(msgRef, function (snap) {
+    if (custId !== currentCustomerId) return;
+    const box = document.getElementById("messages");
+    box.innerHTML = "";
+    snap.forEach(function (child) {
+      const m = child.val();
+      const div = document.createElement("div");
+      div.className = "bubble " + (m.from === "customer" ? "them" : "me");
+      const senderLabel = document.createElement("div");
+      senderLabel.className = "sender";
+      senderLabel.textContent = m.from === "customer" ? (customerNames[custId] || "Customer") : "Reema Official (you)";
+      const text = document.createElement("div");
+      text.textContent = m.text;
+      div.appendChild(senderLabel);
+      div.appendChild(text);
+      box.appendChild(div);
+    });
+    box.scrollTop = box.scrollHeight;
+  });
+};
+
+window.sendReply = function () {
+  if (!currentCustomerId) return;
+  const input = document.getElementById("msgInput");
+  const text = input.value.trim();
+  if (!text) return;
+  push(ref(db, "boutique/" + currentCustomerId + "/messages"), {
+    from: "owner",
+    text: text,
+    ts: Date.now()
+  });
+  input.value = "";
+};
+
+document.getElementById("msgInput")?.addEventListener("keypress", function (e) {
+  if (e.key === "Enter") window.sendReply();
+});
+</script>
+
+</body>
+</html>'''
